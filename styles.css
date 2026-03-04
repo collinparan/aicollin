@@ -457,12 +457,12 @@ section {
 }
 
 .service-card {
-    background: white;
+    background: var(--bg-card);
     padding: 2.5rem;
     border-radius: 12px;
-    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
     transition: all 0.3s ease;
-    border: 1px solid var(--border-gray);
+    border: 1px solid var(--border-default);
 }
 
 .service-card:hover {
@@ -514,7 +514,7 @@ section {
 
 /* Social Proof Section */
 .social-proof {
-    background: white;
+    background: var(--bg-secondary);
     text-align: center;
 }
 
@@ -698,11 +698,12 @@ section {
 .form-group textarea {
     width: 100%;
     padding: 0.75rem;
-    border: 1px solid var(--border-gray);
+    border: 1px solid var(--border-default);
     border-radius: 6px;
     font-size: 1rem;
     transition: border-color 0.3s ease;
-    background: white;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
 }
 
 .form-group input:focus,
@@ -731,7 +732,7 @@ section {
 }
 
 .cta-content p {
-    color: #e2e8f0;
+    color: var(--text-secondary);
     font-size: 1.125rem;
     margin-bottom: 2rem;
 }
@@ -739,13 +740,13 @@ section {
 .cta-note {
     margin-top: 1rem;
     font-size: 0.95rem;
-    color: #cbd5e1;
+    color: var(--text-muted);
 }
 
 /* Footer */
 .footer {
-    background: var(--space-navy);
-    color: white;
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
     padding: 3rem 0 1rem;
 }
 
@@ -758,12 +759,12 @@ section {
 }
 
 .footer-brand h3 {
-    color: white;
+    color: var(--text-primary);
     margin-bottom: 0.5rem;
 }
 
 .footer-brand p {
-    color: #94a3b8;
+    color: var(--text-muted);
     font-size: 0.95rem;
 }
 
@@ -774,7 +775,7 @@ section {
 }
 
 .footer-links a {
-    color: #94a3b8;
+    color: var(--text-muted);
     text-decoration: none;
     transition: color 0.3s ease;
 }
@@ -784,19 +785,19 @@ section {
 }
 
 .footer-credentials p {
-    color: #94a3b8;
+    color: var(--text-muted);
     font-size: 0.95rem;
     line-height: 1.6;
 }
 
 .footer-bottom {
-    border-top: 1px solid #374151;
+    border-top: 1px solid var(--border-default);
     padding-top: 2rem;
     text-align: center;
 }
 
 .footer-bottom p {
-    color: #9ca3af;
+    color: var(--text-muted);
     font-size: 0.9rem;
 }
 
