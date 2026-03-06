@@ -889,3 +889,36 @@ section {
         padding: 1.5rem;
     }
 }
+
+/* Calendly Integration Styles */
+.calendly-booking {
+    width: 100%;
+    background: var(--bg-card);
+    padding: 20px;
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.calendly-inline-widget {
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+/* Contact Section Layout Update for Calendly */
+.contact-content {
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 40px;
+    align-items: flex-start;
+}
+
+@media (max-width: 768px) {
+    .contact-content {
+        grid-template-columns: 1fr;
+        gap: 30px;
+    }
+    
+    .calendly-inline-widget {
+        height: 600px !important;
+    }
+}
