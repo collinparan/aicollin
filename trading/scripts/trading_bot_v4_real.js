@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 /**
- * Trading Bot V4 - Real Implementation
- * NOF2 + ML Strategy for Fox AI
+ * Trading Bot V4 - Hybrid NOF2+Grok Implementation
+ * Inspired by NOF1.ai's proven Grok trading performance
  * 
  * Strategy Overview:
- * - NOF2 (Normalized Oscillator Fusion 2): Multi-timeframe momentum analysis
- * - ML Model: Pattern recognition for entry/exit timing
+ * - NOF2 (Normalized Oscillator Fusion): Multi-timeframe momentum analysis
+ * - Grok AI: Final trade decision layer with market reasoning
+ * - Hybrid Approach: Quantitative signals + AI decision making
  * - Risk Management: Portfolio-based position sizing
  * - Multi-asset: BTC, ETH, SOL, LINK, AVAX, XLM
  */
@@ -27,6 +28,14 @@ const CONFIG = {
         LONG_PERIOD: 21,
         SIGNAL_THRESHOLD: 0.65,
         MOMENTUM_LOOKBACK: 14
+    },
+    
+    // Grok AI Integration
+    GROK: {
+        ENABLED: false,  // TODO: Enable when API key available
+        CONFIDENCE_THRESHOLD: 0.7,  // Minimum Grok confidence to override NOF2
+        MAX_REASONING_LENGTH: 500,  // Token limit for market analysis
+        TIMEOUT_MS: 5000,  // 5 second timeout for Grok responses
     },
     
     // Trading Fees (Crypto.com Exchange rates)
@@ -132,6 +141,7 @@ class TradingBot {
         console.log('✅ Bot initialized successfully');
         console.log(`💰 Portfolio Value: $${this.portfolio.totalValue.toFixed(2)}`);
         console.log(`💵 Cash Reserve: $${this.portfolio.cash.toFixed(2)} (${(this.portfolio.cash/this.portfolio.totalValue*100).toFixed(1)}%)`);
+        console.log(`🤖 Strategy: NOF2 + ${CONFIG.GROK.ENABLED ? 'Grok AI' : 'Simulated Grok'}`);
         
         if (this.portfolio.totalFees) {
             console.log(`📊 Cumulative Trading Fees: $${this.portfolio.totalFees.toFixed(2)}`);
@@ -196,7 +206,7 @@ class TradingBot {
     calculateNOF2Signal(asset) {
         const history = this.priceHistory.get(asset);
         if (!history || history.length < CONFIG.NOF2.LONG_PERIOD + CONFIG.NOF2.MOMENTUM_LOOKBACK) {
-            return 0; // Not enough data
+            return { signal: 0, confidence: 0, reasoning: "Insufficient data" };
         }
         
         const prices = history.map(h => h.price);
@@ -212,9 +222,17 @@ class TradingBot {
         const momentum = this.calculateMomentum(prices, CONFIG.NOF2.MOMENTUM_LOOKBACK);
         
         // Fusion signal
-        const signal = (oscillator * 0.7) + (momentum * 0.3);
+        const rawSignal = (oscillator * 0.7) + (momentum * 0.3);
+        const signal = Math.tanh(rawSignal * 2); // Normalize between -1 and 1
         
-        return Math.tanh(signal * 2); // Normalize between -1 and 1
+        // Signal strength as confidence
+        const confidence = Math.abs(signal);
+        
+        return { 
+            signal, 
+            confidence,
+            reasoning: `NOF2: EMA(${CONFIG.NOF2.SHORT_PERIOD}/${CONFIG.NOF2.LONG_PERIOD}) oscillator=${(oscillator*100).toFixed(2)}%, momentum=${(momentum*100).toFixed(2)}%`
+        };
     }
     
     calculateEMA(prices, period) {
@@ -248,19 +266,97 @@ class TradingBot {
         return baseSize * volatilityAdjustment;
     }
     
-    async executeTrading() {
-        const signals = new Map();
-        
-        // Calculate signals for all assets
-        for (const asset of CONFIG.ASSETS) {
-            const signal = this.calculateNOF2Signal(asset);
-            signals.set(asset, signal);
+    async getGrokDecision(asset, nof2Analysis, marketContext) {
+        if (!CONFIG.GROK.ENABLED) {
+            return nof2Analysis; // Fallback to NOF2 only
         }
         
-        // Execute trades based on signals
-        for (const [asset, signal] of signals) {
-            if (Math.abs(signal) > CONFIG.NOF2.SIGNAL_THRESHOLD) {
-                await this.executeTrade(asset, signal);
+        try {
+            // TODO: Replace with actual Grok API call
+            // For now, simulate Grok reasoning that enhances NOF2
+            const prompt = `Analyze ${asset} trading opportunity:
+            
+NOF2 Signal: ${nof2Analysis.signal.toFixed(3)} (${nof2Analysis.confidence.toFixed(2)} confidence)
+Technical: ${nof2Analysis.reasoning}
+Market Context: Portfolio $${this.portfolio.totalValue.toFixed(0)}, Cash ${(this.portfolio.cash/this.portfolio.totalValue*100).toFixed(1)}%
+
+Should we trade? Consider:
+- Market sentiment and macro conditions
+- Asset-specific technicals beyond NOF2
+- Risk/reward with 0.4% Crypto.com fees
+- Portfolio allocation balance
+
+Respond with: DECISION: [BUY/SELL/HOLD] | CONFIDENCE: [0.0-1.0] | REASONING: [brief logic]`;
+
+            // Simulate Grok response (replace with real API)
+            const grokResponse = this.simulateGrokResponse(asset, nof2Analysis);
+            
+            return {
+                signal: grokResponse.decision === 'BUY' ? Math.abs(nof2Analysis.signal) : 
+                       grokResponse.decision === 'SELL' ? -Math.abs(nof2Analysis.signal) : 0,
+                confidence: grokResponse.confidence,
+                reasoning: `Grok: ${grokResponse.reasoning} | ${nof2Analysis.reasoning}`
+            };
+            
+        } catch (error) {
+            console.error(`❌ Grok API error for ${asset}:`, error.message);
+            return nof2Analysis; // Fallback to NOF2
+        }
+    }
+    
+    simulateGrokResponse(asset, nof2Analysis) {
+        // Temporary simulation until real Grok API integration
+        // Adds market context and risk awareness to NOF2 signals
+        
+        const marketConditions = Math.random(); // Simulate market sentiment
+        const assetMomentum = nof2Analysis.signal;
+        
+        let decision = 'HOLD';
+        let confidence = nof2Analysis.confidence * 0.8; // More conservative than pure NOF2
+        let reasoning = '';
+        
+        if (Math.abs(assetMomentum) > 0.3) {
+            if (marketConditions > 0.6 && assetMomentum > 0) {
+                decision = 'BUY';
+                reasoning = 'Strong bullish NOF2 + favorable market conditions';
+            } else if (marketConditions < 0.4 && assetMomentum < 0) {
+                decision = 'SELL';
+                reasoning = 'Bearish NOF2 confirmed by weak market sentiment';
+            } else {
+                decision = 'HOLD';
+                reasoning = 'NOF2 signal present but market conditions mixed';
+                confidence *= 0.5;
+            }
+        } else {
+            reasoning = 'Weak NOF2 signals, awaiting clearer direction';
+        }
+        
+        return { decision, confidence, reasoning };
+    }
+
+    async executeTrading() {
+        const decisions = new Map();
+        
+        // Calculate NOF2 signals for all assets
+        for (const asset of CONFIG.ASSETS) {
+            const nof2Analysis = this.calculateNOF2Signal(asset);
+            
+            // Get Grok's decision on the NOF2 signal
+            const finalDecision = await this.getGrokDecision(asset, nof2Analysis, {
+                portfolio: this.portfolio,
+                timestamp: Date.now()
+            });
+            
+            decisions.set(asset, finalDecision);
+        }
+        
+        // Execute trades based on Grok-enhanced decisions
+        for (const [asset, decision] of decisions) {
+            if (Math.abs(decision.signal) > CONFIG.NOF2.SIGNAL_THRESHOLD && 
+                decision.confidence > CONFIG.GROK.CONFIDENCE_THRESHOLD) {
+                
+                console.log(`🤖 ${asset}: ${decision.reasoning}`);
+                await this.executeTrade(asset, decision.signal);
             }
         }
         
