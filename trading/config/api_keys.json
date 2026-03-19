@@ -1,0 +1,9 @@
+{
+  "crypto_com": {
+    "api_key": "oMBdhBpdJovKQynSZqY1eY",
+    "secret": "cxakp_BZ6j5SazhJUyKNYgxwByXy",
+    "sandbox": false,
+    "created": "2026-03-19T22:52:00Z",
+    "permissions": ["spot_trading", "read"]
+  }
+}

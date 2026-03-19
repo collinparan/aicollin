@@ -2,34 +2,34 @@
   "positions": {
     "XLM": {
       "quantity": 368.223752,
-      "value": 61.71
+      "value": 62.23902564878767
     },
     "LINK": {
       "quantity": 12.4675,
-      "value": 118.63
+      "value": 118.31259157070635
     },
     "SOL": {
       "quantity": 1.328163,
-      "value": 121.67
+      "value": 120.94674984599656
     },
     "BTC": {
       "quantity": 0.00164422,
-      "value": 119.96
+      "value": 119.9245244038665
     },
     "ETH": {
       "quantity": 0.0550649,
-      "value": 120.16
+      "value": 120.08770608106234
     },
     "AVAX": {
       "quantity": 12.14717,
-      "value": 124.02
+      "value": 124.75816604803322
     }
   },
-  "portfolio_value": 1600.6,
-  "last_update": "2026-03-19T21:41:44.114Z",
+  "cash": 934.45,
+  "portfolio_value": 1600.7187635984528,
+  "last_update": "2026-03-19T22:13:54.766Z",
+  "status": "active",
+  "strategy": "NOF2+ML",
   "circuit_breaker_active": false,
-  "circuit_breaker_threshold": 100,
-  "restored_after_cleanup": false,
-  "last_heartbeat": "2026-03-19T21:34:49.906Z",
-  "status": "emergency_mode"
+  "total_fees": 0
 }
