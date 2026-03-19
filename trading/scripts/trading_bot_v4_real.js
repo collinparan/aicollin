@@ -29,12 +29,13 @@ const CONFIG = {
         MOMENTUM_LOOKBACK: 14
     },
     
-    // Trading Fees (realistic exchange fees)
+    // Trading Fees (Crypto.com Exchange rates)
     FEES: {
-        MAKER_FEE: 0.001,       // 0.1% maker fee
-        TAKER_FEE: 0.0015,      // 0.15% taker fee
-        WITHDRAWAL_FEE: 0.0001, // 0.01% withdrawal fee
-        MIN_TRADE_SIZE: 10,     // $10 minimum trade to justify fees
+        MAKER_FEE: 0.004,       // 0.4% maker fee (Crypto.com standard)
+        TAKER_FEE: 0.004,       // 0.4% taker fee (Crypto.com standard)
+        WITHDRAWAL_FEE: 0.0005, // 0.05% withdrawal fee
+        MIN_TRADE_SIZE: 15,     // $15 minimum trade due to higher fees
+        CRO_DISCOUNT: 0.001,    // 0.1% fee reduction if holding CRO (25% off)
     },
     
     // Risk Management
@@ -289,8 +290,15 @@ class TradingBot {
         }
     }
     
-    calculateTradingFees(tradeValue, isMaker = false) {
-        const feeRate = isMaker ? CONFIG.FEES.MAKER_FEE : CONFIG.FEES.TAKER_FEE;
+    calculateTradingFees(tradeValue, isMaker = false, hasCRO = false) {
+        // Crypto.com Exchange: 0.4% maker/taker (same rate)
+        let feeRate = CONFIG.FEES.MAKER_FEE; // Same as taker on Crypto.com
+        
+        // Apply CRO discount if holding CRO tokens (25% reduction)
+        if (hasCRO) {
+            feeRate -= CONFIG.FEES.CRO_DISCOUNT;
+        }
+        
         return Math.abs(tradeValue) * feeRate;
     }
     
@@ -300,8 +308,8 @@ class TradingBot {
             return;
         }
         
-        // Calculate fees (assume taker for conservative estimate)
-        const fees = this.calculateTradingFees(deltaValue, false);
+        // Calculate fees (Crypto.com Exchange - same rate for maker/taker)
+        const fees = this.calculateTradingFees(deltaValue, false, false); // Assume no CRO discount for now
         const netDeltaValue = deltaValue > 0 ? deltaValue + fees : deltaValue - fees;
         
         // Check if we have enough cash for buy orders (including fees)
