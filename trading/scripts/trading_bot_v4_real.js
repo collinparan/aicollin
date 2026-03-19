@@ -29,6 +29,14 @@ const CONFIG = {
         MOMENTUM_LOOKBACK: 14
     },
     
+    // Trading Fees (realistic exchange fees)
+    FEES: {
+        MAKER_FEE: 0.001,       // 0.1% maker fee
+        TAKER_FEE: 0.0015,      // 0.15% taker fee
+        WITHDRAWAL_FEE: 0.0001, // 0.01% withdrawal fee
+        MIN_TRADE_SIZE: 10,     // $10 minimum trade to justify fees
+    },
+    
     // Risk Management
     RISK: {
         STOP_LOSS: 0.08,        // 8% stop loss
@@ -97,7 +105,8 @@ class TradingBot {
             last_update: new Date().toISOString(),
             status: 'active',
             strategy: 'NOF2+ML',
-            circuit_breaker_active: false
+            circuit_breaker_active: false,
+            total_fees: this.portfolio.totalFees || 0
         };
         
         try {
@@ -122,6 +131,10 @@ class TradingBot {
         console.log('✅ Bot initialized successfully');
         console.log(`💰 Portfolio Value: $${this.portfolio.totalValue.toFixed(2)}`);
         console.log(`💵 Cash Reserve: $${this.portfolio.cash.toFixed(2)} (${(this.portfolio.cash/this.portfolio.totalValue*100).toFixed(1)}%)`);
+        
+        if (this.portfolio.totalFees) {
+            console.log(`📊 Cumulative Trading Fees: $${this.portfolio.totalFees.toFixed(2)}`);
+        }
         
         this.startTrading();
     }
@@ -265,14 +278,39 @@ class TradingBot {
         
         const tradeDelta = targetValue - currentValue;
         
-        if (Math.abs(tradeDelta) > this.portfolio.totalValue * 0.01) { // Min 1% portfolio trade
+        // Enhanced trade filtering: minimum trade size AND fee justification
+        const minTradeThreshold = Math.max(
+            this.portfolio.totalValue * 0.01,  // Min 1% portfolio trade
+            CONFIG.FEES.MIN_TRADE_SIZE * 2     // Must be 2x min trade to justify fees
+        );
+        
+        if (Math.abs(tradeDelta) > minTradeThreshold) {
             await this.placeTrade(asset, tradeDelta, currentPrice);
         }
     }
     
+    calculateTradingFees(tradeValue, isMaker = false) {
+        const feeRate = isMaker ? CONFIG.FEES.MAKER_FEE : CONFIG.FEES.TAKER_FEE;
+        return Math.abs(tradeValue) * feeRate;
+    }
+    
     async placeTrade(asset, deltaValue, price) {
-        // TODO: Replace with real exchange API
-        console.log(`🔄 ${deltaValue > 0 ? 'BUY' : 'SELL'} ${asset}: $${Math.abs(deltaValue).toFixed(2)} @ $${price.toFixed(4)}`);
+        // Skip small trades that don't justify fees
+        if (Math.abs(deltaValue) < CONFIG.FEES.MIN_TRADE_SIZE) {
+            return;
+        }
+        
+        // Calculate fees (assume taker for conservative estimate)
+        const fees = this.calculateTradingFees(deltaValue, false);
+        const netDeltaValue = deltaValue > 0 ? deltaValue + fees : deltaValue - fees;
+        
+        // Check if we have enough cash for buy orders (including fees)
+        if (deltaValue > 0 && netDeltaValue > this.portfolio.cash) {
+            console.log(`⚠️  Insufficient cash for ${asset} trade: need $${netDeltaValue.toFixed(2)}, have $${this.portfolio.cash.toFixed(2)}`);
+            return;
+        }
+        
+        console.log(`🔄 ${deltaValue > 0 ? 'BUY' : 'SELL'} ${asset}: $${Math.abs(deltaValue).toFixed(2)} @ $${price.toFixed(4)} (fees: $${fees.toFixed(2)})`);
         
         const deltaQuantity = deltaValue / price;
         const position = this.portfolio.positions[asset] || { quantity: 0, value: 0 };
@@ -281,15 +319,21 @@ class TradingBot {
         position.quantity += deltaQuantity;
         position.value = position.quantity * price;
         
-        // Update cash
-        this.portfolio.cash -= deltaValue;
+        // Update cash (subtract trade value AND fees)
+        this.portfolio.cash -= netDeltaValue;
+        
+        // Track cumulative fees
+        if (!this.portfolio.totalFees) {
+            this.portfolio.totalFees = 0;
+        }
+        this.portfolio.totalFees += fees;
         
         // Update portfolio
         this.portfolio.positions[asset] = position;
         this.updatePortfolioValue();
         
-        // Log trade
-        this.logTrade(asset, deltaQuantity, price, deltaValue);
+        // Log trade with fees
+        this.logTrade(asset, deltaQuantity, price, deltaValue, fees);
     }
     
     getCurrentPrice(asset) {
@@ -312,10 +356,11 @@ class TradingBot {
         this.portfolio.lastUpdate = new Date().toISOString();
     }
     
-    logTrade(asset, quantity, price, value) {
+    logTrade(asset, quantity, price, value, fees = 0) {
         const logFile = path.join(__dirname, '../logs/trading_bot.log');
         const timestamp = new Date().toISOString();
-        const logEntry = `[${timestamp}] ${quantity > 0 ? 'BUY' : 'SELL'} ${asset}: ${Math.abs(quantity).toFixed(6)} @ $${price.toFixed(4)} = $${Math.abs(value).toFixed(2)}\n`;
+        const netValue = Math.abs(value) + fees;
+        const logEntry = `[${timestamp}] ${quantity > 0 ? 'BUY' : 'SELL'} ${asset}: ${Math.abs(quantity).toFixed(6)} @ $${price.toFixed(4)} = $${Math.abs(value).toFixed(2)} (fees: $${fees.toFixed(2)}, net: $${netValue.toFixed(2)})\n`;
         
         fs.appendFileSync(logFile, logEntry);
     }
