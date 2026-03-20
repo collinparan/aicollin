@@ -71,6 +71,7 @@ class CryptoComExchangeBot {
         this.state = this.loadState();
         this.portfolio = new Map();
         this.lastPrices = new Map();
+        this.priceHistory = new Map(); // Track price history for technical analysis
         this.running = false;
         this.requestId = 1;
     }
@@ -274,31 +275,39 @@ class CryptoComExchangeBot {
         }
     }
 
-    // Get current market prices
+    // Get current market prices (FIXED)
     async getMarketPrices() {
         try {
+            // Use simple GET request to public tickers endpoint
+            const response = await this.getPublicTickers();
+            
+            if (!response || !response.result || !response.result.data) {
+                console.log('❌ Failed to get ticker data');
+                return new Map();
+            }
+            
+            const tickers = response.result.data;
             const prices = new Map();
             
             for (const asset of CONFIG.ASSETS) {
-                try {
-                    // Use public API for ticker data
-                    const response = await this.makeRequest('/exchange/v1/public/get-ticker', {
-                        method: 'public/get-ticker',
-                        params: { instrument_name: asset }
-                    });
-                    
-                    if (response && response.code === 0 && response.result.data.length > 0) {
-                        const ticker = response.result.data[0];
-                        const price = parseFloat(ticker.a); // last price
-                        prices.set(asset, price);
-                        this.lastPrices.set(asset, price);
-                    }
-                } catch (error) {
-                    console.log(`⚠️ Failed to get price for ${asset}:`, error.message);
+                const ticker = tickers.find(t => t.i === asset);
+                if (ticker) {
+                    const price = parseFloat(ticker.a); // ask price
+                    prices.set(asset, price);
+                    this.lastPrices.set(asset, price);
+                } else {
+                    console.log(`⚠️ Ticker not found for ${asset}`);
                 }
             }
             
             console.log('📈 Updated', prices.size, 'market prices');
+            if (prices.size > 0) {
+                console.log('💰 Current prices:');
+                prices.forEach((price, asset) => {
+                    console.log(`   ${asset}: $${price.toLocaleString()}`);
+                });
+            }
+            
             return prices;
             
         } catch (error) {
@@ -307,26 +316,141 @@ class CryptoComExchangeBot {
         }
     }
 
+    // Get public tickers via simple GET request
+    async getPublicTickers() {
+        return new Promise((resolve, reject) => {
+            const https = require('https');
+            
+            const options = {
+                hostname: 'api.crypto.com',
+                path: '/exchange/v1/public/get-tickers',
+                method: 'GET',
+                headers: { 'Accept': 'application/json' }
+            };
+            
+            const req = https.request(options, (res) => {
+                let data = '';
+                res.on('data', chunk => data += chunk);
+                res.on('end', () => {
+                    try {
+                        const response = JSON.parse(data);
+                        if (response.code === 0) {
+                            resolve(response);
+                        } else {
+                            reject(new Error(`API Error: ${response.message}`));
+                        }
+                    } catch (parseError) {
+                        reject(new Error(`Parse error: ${parseError.message}`));
+                    }
+                });
+            });
+            
+            req.on('error', reject);
+            req.setTimeout(10000, () => {
+                req.abort();
+                reject(new Error('Request timeout'));
+            });
+            
+            req.end();
+        });
+    }
+
     // Calculate NOF2 signal (simplified for real trading)
     calculateNOF2Signal(asset) {
-        // This is a simplified version for immediate deployment
-        // TODO: Implement full technical analysis with historical data
-        
         const price = this.lastPrices.get(asset);
-        if (!price) return null;
+        if (!price || !this.priceHistory.has(asset)) {
+            // Initialize price history
+            if (!this.priceHistory.has(asset)) {
+                this.priceHistory.set(asset, []);
+            }
+            this.priceHistory.get(asset).push(price);
+            return {
+                asset: asset,
+                price: price,
+                signal: 'HOLD',
+                strength: 0.5,
+                confidence: 0.3,
+                reasoning: 'Initializing price history'
+            };
+        }
         
-        // Basic momentum calculation (placeholder)
-        const signal = {
+        // Get price history and add current price
+        const history = this.priceHistory.get(asset);
+        history.push(price);
+        
+        // Keep only last 20 prices (20 minute history at 1min intervals)
+        if (history.length > 20) {
+            history.shift();
+        }
+        
+        // Need at least 5 data points for analysis
+        if (history.length < 5) {
+            return {
+                asset: asset,
+                price: price,
+                signal: 'HOLD',
+                strength: 0.5,
+                confidence: 0.3,
+                reasoning: `Building history (${history.length}/5)`
+            };
+        }
+        
+        // Calculate momentum indicators
+        const recent5 = history.slice(-5);
+        const recent10 = history.length >= 10 ? history.slice(-10, -5) : history.slice(0, -5);
+        
+        const recentAvg = recent5.reduce((a, b) => a + b, 0) / recent5.length;
+        const olderAvg = recent10.reduce((a, b) => a + b, 0) / recent10.length;
+        
+        const momentum = (recentAvg - olderAvg) / olderAvg;
+        const volatility = this.calculateVolatility(recent5);
+        
+        // Simple trend analysis
+        let signal = 'HOLD';
+        let strength = 0.5;
+        let reasoning = `Momentum: ${(momentum * 100).toFixed(2)}%`;
+        
+        if (momentum > 0.005 && volatility < 0.02) { // Strong upward momentum, low volatility
+            signal = 'BUY';
+            strength = Math.min(0.8, 0.5 + Math.abs(momentum) * 10);
+            reasoning += ' - Strong uptrend detected';
+        } else if (momentum < -0.005 && volatility < 0.02) { // Strong downward momentum
+            signal = 'SELL';
+            strength = Math.min(0.8, 0.5 + Math.abs(momentum) * 10);
+            reasoning += ' - Strong downtrend detected';
+        } else if (Math.abs(momentum) > 0.002) {
+            // Weaker signals
+            signal = momentum > 0 ? 'BUY' : 'SELL';
+            strength = 0.5 + Math.abs(momentum) * 5;
+            reasoning += momentum > 0 ? ' - Weak uptrend' : ' - Weak downtrend';
+        }
+        
+        const confidence = Math.min(0.9, 0.4 + (history.length / 20) * 0.4);
+        
+        console.log(`📊 NOF2 ${asset}: ${signal} (${(strength * 100).toFixed(1)}%) - ${reasoning}`);
+        
+        return {
             asset: asset,
             price: price,
-            signal: 'HOLD', // Conservative default
-            strength: 0.5,
-            confidence: 0.6,
-            reasoning: 'Basic price monitoring - full NOF2 pending historical data'
+            signal: signal,
+            strength: strength,
+            confidence: confidence,
+            reasoning: reasoning
         };
+    }
+    
+    calculateVolatility(prices) {
+        if (prices.length < 2) return 0;
         
-        console.log(`📊 NOF2 ${asset}: ${signal.signal} (${(signal.strength * 100).toFixed(1)}%)`);
-        return signal;
+        const returns = [];
+        for (let i = 1; i < prices.length; i++) {
+            returns.push((prices[i] - prices[i-1]) / prices[i-1]);
+        }
+        
+        const avgReturn = returns.reduce((a, b) => a + b, 0) / returns.length;
+        const variance = returns.reduce((sum, ret) => sum + Math.pow(ret - avgReturn, 2), 0) / returns.length;
+        
+        return Math.sqrt(variance);
     }
 
     // Simulate Grok AI decision
@@ -380,9 +504,9 @@ class CryptoComExchangeBot {
                     if (finalDecision.action !== 'HOLD') {
                         console.log(`🎯 ${asset}: ${finalDecision.action} - ${finalDecision.reasoning}`);
                         
-                        // For now, just log the decision (safety first)
-                        console.log('⚠️ Trade execution temporarily disabled for safety');
-                        // await this.executeTrade(finalDecision);
+                        // ENABLE LIVE TRADING! 
+                        console.log('🚀 EXECUTING TRADE...');
+                        await this.executeTrade(finalDecision);
                     }
                     
                 } catch (error) {
@@ -396,7 +520,7 @@ class CryptoComExchangeBot {
     }
 
     makeFinalDecision(nof2Signal, grokDecision, portfolio) {
-        // Conservative decision making for live trading
+        // ENABLE LIVE TRADING - PRICE FEEDS FIXED!
         if (grokDecision.confidence < CONFIG.GROK.CONFIDENCE_THRESHOLD) {
             return {
                 action: 'HOLD',
@@ -413,10 +537,34 @@ class CryptoComExchangeBot {
             };
         }
         
-        // For safety, default to HOLD until fully tested
+        // NOW ENABLE BASIC TRADING LOGIC
+        if (grokDecision.decision === 'CONFIRM' && nof2Signal.signal === 'BUY') {
+            const currentPrice = this.lastPrices.get(nof2Signal.asset);
+            if (currentPrice && portfolio.cashBalance > CONFIG.FEES.MIN_TRADE_SIZE) {
+                return {
+                    action: 'BUY',
+                    reasoning: `NOF2 ${nof2Signal.signal} confirmed by Grok (${grokDecision.confidence})`,
+                    asset: nof2Signal.asset,
+                    price: currentPrice,
+                    size: Math.min(portfolio.cashBalance * 0.1, 100) // Small test trades: 10% cash or $100 max
+                };
+            }
+        } else if (grokDecision.decision === 'CONFIRM' && nof2Signal.signal === 'SELL') {
+            const position = portfolio.positions.get(nof2Signal.asset);
+            if (position && position.quantity > 0) {
+                return {
+                    action: 'SELL',
+                    reasoning: `NOF2 ${nof2Signal.signal} confirmed by Grok (${grokDecision.confidence})`,
+                    asset: nof2Signal.asset,
+                    price: this.lastPrices.get(nof2Signal.asset),
+                    size: Math.min(position.quantity * 0.1, position.quantity) // Sell 10% or all if small
+                };
+            }
+        }
+        
         return {
             action: 'HOLD',
-            reasoning: 'Conservative hold - bot in monitoring mode',
+            reasoning: 'Conditions not met for trading',
             asset: nof2Signal.asset
         };
     }
@@ -437,7 +585,8 @@ class CryptoComExchangeBot {
         console.log('\\n🟢 Bot running in LIVE MODE');
         console.log('📊 Portfolio target: $' + CONFIG.PORTFOLIO_TARGET.toFixed(2));
         console.log('💵 Cash available: $' + CONFIG.AVAILABLE_CASH.toFixed(2));
-        console.log('⏰ Trading cycle: 2 minutes');
+        console.log('⏰ Trading cycle: 1 minute (high frequency)');
+        console.log('🚀 LIVE TRADING ENABLED - PRICE FEEDS FIXED!');
         
         // Initial portfolio sync
         await this.getPortfolio();
@@ -448,9 +597,9 @@ class CryptoComExchangeBot {
                 await this.executeTrading();
                 await this.logStatus();
                 
-                // Wait 2 minutes before next cycle
-                console.log('\\n⏰ Next cycle in 2 minutes...');
-                await new Promise(resolve => setTimeout(resolve, 120000));
+                // Wait 1 minute before next cycle (faster analysis)
+                console.log('\\n⏰ Next cycle in 1 minute...');
+                await new Promise(resolve => setTimeout(resolve, 60000));
                 
             } catch (error) {
                 console.error('❌ Main loop error:', error.message);
@@ -502,6 +651,103 @@ class CryptoComExchangeBot {
             console.log('⚠️ No previous state found, starting fresh');
         }
         return {};
+    }
+
+    // Execute actual trade
+    async executeTrade(decision) {
+        try {
+            if (decision.action === 'BUY') {
+                await this.placeBuyOrder(decision);
+            } else if (decision.action === 'SELL') {
+                await this.placeSellOrder(decision);
+            }
+        } catch (error) {
+            console.error(`❌ Trade execution failed: ${error.message}`);
+        }
+    }
+
+    // Place buy order
+    async placeBuyOrder(decision) {
+        try {
+            const orderSize = Math.floor(decision.size / decision.price * 100000) / 100000; // Round to 5 decimals
+            
+            console.log(`🛒 Placing BUY order:`);
+            console.log(`   Asset: ${decision.asset}`);
+            console.log(`   Size: $${decision.size.toFixed(2)}`);
+            console.log(`   Quantity: ${orderSize}`);
+            console.log(`   Price: $${decision.price.toLocaleString()}`);
+            
+            const response = await this.makeRequest('/exchange/v1/private/create-order', {
+                method: 'private/create-order',
+                params: {
+                    instrument_name: decision.asset,
+                    side: 'BUY',
+                    type: 'MARKET',
+                    quantity: orderSize.toString()
+                }
+            });
+            
+            if (response && response.code === 0) {
+                console.log('✅ BUY order placed successfully');
+                console.log('📋 Order ID:', response.result.order_id);
+                this.logTrade('BUY', decision.asset, orderSize, decision.price, decision.reasoning);
+            } else {
+                console.log('❌ BUY order failed:', response.message);
+            }
+            
+        } catch (error) {
+            console.error('❌ BUY order error:', error.message);
+        }
+    }
+
+    // Place sell order  
+    async placeSellOrder(decision) {
+        try {
+            const orderSize = Math.floor(decision.size * 100000) / 100000; // Round to 5 decimals
+            
+            console.log(`💰 Placing SELL order:`);
+            console.log(`   Asset: ${decision.asset}`);
+            console.log(`   Quantity: ${orderSize}`);
+            console.log(`   Price: $${decision.price.toLocaleString()}`);
+            
+            const response = await this.makeRequest('/exchange/v1/private/create-order', {
+                method: 'private/create-order',
+                params: {
+                    instrument_name: decision.asset,
+                    side: 'SELL',
+                    type: 'MARKET',
+                    quantity: orderSize.toString()
+                }
+            });
+            
+            if (response && response.code === 0) {
+                console.log('✅ SELL order placed successfully');
+                console.log('📋 Order ID:', response.result.order_id);
+                this.logTrade('SELL', decision.asset, orderSize, decision.price, decision.reasoning);
+            } else {
+                console.log('❌ SELL order failed:', response.message);
+            }
+            
+        } catch (error) {
+            console.error('❌ SELL order error:', error.message);
+        }
+    }
+
+    // Log trade for records
+    logTrade(action, asset, quantity, price, reasoning) {
+        const tradeLog = {
+            timestamp: new Date().toISOString(),
+            action: action,
+            asset: asset,
+            quantity: quantity,
+            price: price,
+            value: quantity * price,
+            reasoning: reasoning
+        };
+        
+        console.log('📝 Trade logged:', JSON.stringify(tradeLog, null, 2));
+        
+        // TODO: Append to trade log file
     }
 
     stop() {
